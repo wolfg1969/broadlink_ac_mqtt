@@ -1,0 +1,27 @@
+# Broadlink AC to MQTT bridge
+#
+# host network mode is intentional: device discovery broadcasts on UDP
+# (255.255.255.255:80) to find ACs on the LAN, which Docker's default bridge
+# network isolates. With host networking the container shares the host's
+# networking stack, so both discovery AND your MQTT broker (whatever host/IP
+# you set in mqtt.host) are reachable directly on your LAN.
+#
+# Setup:
+#   1. cp settings/sample_config.yml settings/config.yml
+#   2. Edit settings/config.yml -> set mqtt.host (and user/passwd) to your broker
+#   3. docker compose up -d --build
+services:
+  broadlink_ac_mqtt:
+    build: .
+    container_name: broadlink_ac_mqtt
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      # Logging verbosity: DEBUG / INFO / WARNING / ERROR (default INFO).
+      # monitor.py also forces DEBUG when run with -d.
+      LOGLEVEL: INFO
+    volumes:
+      # Your config file (settings/config.yml); overrides the one baked into the image.
+      - ./settings:/app/settings
+      # Persist logs (out.log) across restarts.
+      - ./log:/app/log
