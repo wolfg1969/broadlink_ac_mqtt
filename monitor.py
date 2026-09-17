@@ -25,7 +25,6 @@ pid_last_update = 0
 
 do_loop = False
 running = False
- 
 
 
 #*****************************************  Get going methods ************************************************
@@ -41,7 +40,7 @@ def discover_and_dump_for_config(config):
 	print ("*********** start copy below ************")
 	for device in devices.values():
 		yaml_devices.append(
-			{'name':device.name.encode('ascii','ignore'),
+			{'name':device.name.encode('ascii','ignore').decode('ascii'),
 			'ip':device.host[0]
 			,'port':device.host[1]
 			,'mac':device.status['macaddress']}
@@ -62,7 +61,7 @@ def read_config(config_file_path):
 	
 	with open(config_file_path, "r") as ymlfile:
 		config_file = yaml.load(ymlfile,Loader=yaml.SafeLoader)
-	 
+	
 	##Service settings
 	config["daemon_mode"] = config_file["service"]["daemon_mode"]
 	config["update_interval"] = config_file["service"]["update_interval"]	
@@ -70,7 +69,7 @@ def read_config(config_file_path):
 	##What ip to bind to
 	config['bind_to_ip'] = config_file["service"].get("bind_to_ip") or None
 
-	 
+	
 	
 	##Mqtt settings
 	config["mqtt_host"] = config_file["mqtt"].get("host")
@@ -109,7 +108,6 @@ def init_logging(level,log_file_path):
 			filename=log_file_path,
 			level=level,
 			format="%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s",
-		 
 		)
 		
 		console = logging.StreamHandler()
@@ -255,13 +253,15 @@ def start():
 			sys.exit()
 			
 	else:
-		if os.path.exists(data_dir+'/settings/config.yml'):
-			config_file_path = data_dir+'/settings/config.yml'
-		# elif  os.path.exists(data_dir+'\\settings\\config.yml'):
-		# 	config_file_path = data_dir+'\\settings\\config.yml'
+		settings_config = os.path.join(data_dir, 'settings', 'config.yml')
+		root_config = os.path.join(data_dir, 'config.yml')
+		if os.path.exists(settings_config):
+			config_file_path = settings_config
+		elif os.path.exists(root_config):
+			config_file_path = root_config
 		else:
-			# config_file_path = data_dir+'/config.yml'
-			config_file_path = data_dir+'\\settings\config.yml'
+			print("Config file not found: %s (copy settings/sample_config.yml to settings/config.yml)" % settings_config)
+			sys.exit()
 		
 	
 	##LogFile
@@ -363,7 +363,7 @@ def start():
 			running = True
 			
 			AC.start(config,devices)
-			 
+			
 			touch_pid_file()
 		
 		running = False

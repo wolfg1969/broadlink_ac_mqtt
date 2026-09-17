@@ -94,7 +94,7 @@ def discover(timeout=None, bind_to_ip=None):
 		devtype = responsepacket[0x34] | responsepacket[0x35] << 8
 		name = responsepacket[0x40:].split(b'\x00')[0].decode('utf-8')
 		if not name:
-			name = mac
+			name = ''.join(format(x, '02x') for x in mac)
 		cloud = bool(responsepacket[-1])
 		cs.close()
 		return gendevice(devtype, host, mac,name=name,cloud=cloud)
@@ -117,7 +117,7 @@ def discover(timeout=None, bind_to_ip=None):
 			name = responsepacket[0x40:].split(b'\x00')[0].decode('utf-8')
 			##Make sure there is some name
 			if not name:
-				name = mac		
+				name = ''.join(format(x, '02x') for x in mac)
 				
 			cloud = bool(responsepacket[-1])
 			dev = gendevice(devtype, host, mac,name=name,cloud=cloud)
@@ -261,7 +261,7 @@ class device:
 			checksum += payload[i]
 			checksum = checksum & 0xffff
 
-		 
+		
 		
 		payload = self.encrypt(bytes(payload))
 
@@ -269,7 +269,7 @@ class device:
 		packet[0x35] = checksum >> 8
 
 		for i in range(len(payload)):
-		 	packet.append(payload[i])
+			packet.append(payload[i])
 
 		checksum = 0xbeaf
 		for i in range(len(packet)):
@@ -1274,7 +1274,7 @@ class ac_db_debug(device):
 		packet[0x35] = checksum >> 8
 
 		for i in range(len(payload)):
-		 	packet.append(payload[i])
+			packet.append(payload[i])
 
 		checksum = 0xbeaf
 		for i in range(len(packet)):

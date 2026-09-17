@@ -34,9 +34,23 @@ https://t.me/+1Xw9Kwr2P7k2YjY0
   * Ballu BSUI/IN-12HN8 (with intergated Wi-Fi module and AC Freedom app). --> Tested and working
   * In theory any Broadlink devtype == 0x4E2a (20010) using the AC Freedom APP
 
-## Installation: 
+## Installation:
+
+Using a virtual environment (recommended, requires Python 3.10):
 ```
-pip install -r requirements.txt 
+python3.10 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+Or install globally:
+```
+pip install -r requirements.txt
+```
+
+Run with the venv interpreter (no activation needed):
+```
+.venv/bin/python monitor.py
 ```
 
 1. copy sample_config.yml to config.yml under /settings folder or the data-dir you speified
