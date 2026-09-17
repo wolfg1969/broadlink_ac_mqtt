@@ -100,6 +100,11 @@ class AcToMqtt:
 
         ##we are alive ##Update PID file
         try:
+            ##Refresh the LWT availability "online" marker on every cycle so a
+            ##transient disconnect's retained "offline" cannot leave HA stuck
+            ##on "unavailable" between reconnects.
+            self._publish_online()
+
             interval = self.config["update_interval"]
             now = time.time()
 
@@ -277,13 +282,20 @@ class AcToMqtt:
                 
     def _publish(self,topic,value,retain=False,qos=0):
         payload = value
-        logger.debug('publishing on topic "%s", data "%s"' % (topic, payload))            
+        logger.debug('publishing on topic "%s", data "%s"' % (topic, payload))
         pubResult = self._mqtt.publish(topic, payload=payload, qos=qos, retain=retain)
-        
+
         ##If there error, then debug log and return not None
-        if pubResult[0] != 0:                
+        if pubResult[0] != 0:
             logger.debug('Publishing Result: "%s"' % mqtt.error_string(pubResult[0]))
             return pubResult[0]
+
+    def _publish_online(self):
+        ##Heartbeat on the LWT availability topic. The will publishes "offline"
+        ##on an ungraceful disconnect; re-publishing "online" here (and on every
+        ##poll) means a stray "offline" is corrected within one update interval
+        ##instead of waiting for a full reconnect to fire _on_mqtt_connect.
+        self._publish(self.config["mqtt_topic_prefix"]+'LWT','online',retain=True)
             
     def connect_mqtt(self):
 
@@ -575,4 +587,4 @@ class AcToMqtt:
 
 
         ##LWT
-        self._publish(self.config["mqtt_topic_prefix"]+'LWT','online',retain=True)
+        self._publish_online()
