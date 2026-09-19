@@ -32,7 +32,8 @@ FAN_LABELS = {
     0b00000010: "MEDIUM",           # raw=2, IR-remote only
     0b00000011: "LOW",              # raw=3, app 50% (+mute=25%)
     0b00000101: "HIGH",             # raw=5, app 100%
-    0b00000110: "HIGH (alt)",       # raw=6, IR-remote only, between 75% and 100%
+    # raw=6, IR-remote only, between 75% and 100%
+    0b00000110: "HIGH (alt)",
     0b00000111: "AUTO",             # raw=7, auto (cooling mode)
 }
 # Value 4 is reported by some models but is not in the enum.
@@ -60,13 +61,15 @@ def pick_device_from_config(config_path, mac=None, index=None):
 
     if index is not None:
         if index < 0 or index >= len(devices):
-            sys.exit("Index %d out of range (0..%d)" % (index, len(devices) - 1))
+            sys.exit("Index %d out of range (0..%d)" %
+                     (index, len(devices) - 1))
         return devices[index]
 
     # No selector: list what's available and exit.
     print("Multiple devices in config. Pick one with --mac <MAC> or --index <N>:\n")
     for i, d in enumerate(devices):
-        print("  [%d] %s  %-18s  %s:%s" % (i, d["mac"], d.get("name", ""), d["ip"], d.get("port", 80)))
+        print("  [%d] %s  %-18s  %s:%s" %
+              (i, d["mac"], d.get("name", ""), d["ip"], d.get("port", 80)))
     sys.exit(0)
 
 
@@ -83,16 +86,23 @@ def main():
         epilog=__doc__,
     )
     src = p.add_argument_group("device source (use one of these)")
-    src.add_argument("-c", "--config", help="Path to config.yml (select a device from it)")
-    src.add_argument("--index", type=int, help="Index into config 'devices' list (0-based)")
-    src.add_argument("--mac", help="MAC of the device to select from config (e.g. 34ea34e74e55)")
-    src.add_argument("--ip", help="Talk directly to this IP (no config needed)")
-    src.add_argument("--port", type=int, default=80, help="AC port (default 80, only with --ip)")
+    src.add_argument("-c", "--config",
+                     help="Path to config.yml (select a device from it)")
+    src.add_argument("--index", type=int,
+                     help="Index into config 'devices' list (0-based)")
+    src.add_argument(
+        "--mac", help="MAC of the device to select from config (e.g. 34ea34e74e55)")
+    src.add_argument(
+        "--ip", help="Talk directly to this IP (no config needed)")
+    src.add_argument("--port", type=int, default=80,
+                     help="AC port (default 80, only with --ip)")
     args = p.parse_args()
 
     if args.config:
-        d = pick_device_from_config(args.config, mac=args.mac, index=args.index)
-        ip, port, mac_hex, name = d["ip"], d.get("port", 80), d["mac"], d.get("name")
+        d = pick_device_from_config(
+            args.config, mac=args.mac, index=args.index)
+        ip, port, mac_hex, name = d["ip"], d.get(
+            "port", 80), d["mac"], d.get("name")
     elif args.ip:
         if not args.mac:
             sys.exit("--ip also requires --mac (e.g. --mac 34ea34e74e55)")
@@ -102,8 +112,10 @@ def main():
         default_cfg = os.path.join(os.path.dirname(os.path.realpath(__file__)),
                                    "settings", "config.yml")
         if os.path.exists(default_cfg):
-            d = pick_device_from_config(default_cfg, mac=args.mac, index=args.index)
-            ip, port, mac_hex, name = d["ip"], d.get("port", 80), d["mac"], d.get("name")
+            d = pick_device_from_config(
+                default_cfg, mac=args.mac, index=args.index)
+            ip, port, mac_hex, name = d["ip"], d.get(
+                "port", 80), d["mac"], d.get("name")
         else:
             p.error("no device source: pass --config or --ip/--mac, "
                     "or place settings/config.yml next to this script")
