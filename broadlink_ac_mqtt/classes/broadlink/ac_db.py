@@ -373,18 +373,40 @@ class ac_db(device):
             level=(self.logging.DEBUG if debug else self.logging.INFO))
         self.logger.debug("Debugging Enabled")
 
-        # Populate array with latest data
+        # Populate array with latest data. An AC that is unreachable right now
+        # must not abort startup: the poll loop retries and reports it offline
+        # through its availability topic, and get_ac_status() re-authenticates
+        # lazily so the device recovers without a restart.
+        self.authenticated = False
         self.logger.debug("Authenticating")
-        if self.auth() == False:
-            self.logger.critical("Authentication Failed to AC")
-            return False
+        try:
+            if not self.auth():
+                self.logger.critical("Authentication Failed to AC")
+                return
 
-        self.logger.debug("Getting current details in init")
-
-        # Get the current details
-        self.get_ac_status(force_update=True)
+            self.authenticated = True
+            self.logger.debug("Getting current details in init")
+            self.get_ac_status(force_update=True)
+        except Exception as e:
+            self.logger.warning(
+                "Could not contact AC %s at %s during setup, will retry: %s" % (
+                    self.status['macaddress'], host, e))
 
     def get_ac_status(self, force_update=False):
+
+        # Re-authenticate after a device that was unreachable at startup comes
+        # back, so it does not need a bridge restart to accept commands again.
+        if not self.authenticated:
+            try:
+                if not self.auth():
+                    self.logger.warning(
+                        "Authentication to AC %s failed" % self.status['macaddress'])
+                    return False
+            except Exception as e:
+                self.logger.warning(
+                    "AC %s unreachable: %s" % (self.status['macaddress'], e))
+                return False
+            self.authenticated = True
 
         # Check if the status is up to date to reduce timeout issues. Can be overwritten by force_update
         self.logger.debug("Last update was: %s" % self.status['lastupdate'])
