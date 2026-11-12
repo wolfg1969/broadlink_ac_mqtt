@@ -62,6 +62,9 @@ def read_config(config_file_path):
     config["daemon_mode"] = config_file["service"]["daemon_mode"]
     config["update_interval"] = config_file["service"]["update_interval"]
     config["self_discovery"] = config_file["service"]["self_discovery"]
+    # How many consecutive failed polls before a device is reported offline
+    config["availability_failures"] = config_file["service"].get(
+        "availability_failures", 3) or 3
     # What ip to bind to
     config['bind_to_ip'] = config_file["service"].get("bind_to_ip") or None
 
@@ -104,9 +107,10 @@ def init_logging(level, log_file_path):
     )
 
     console = logging.StreamHandler()
-    console.setLevel(logging.INFO)
+    console.setLevel(level)
     # set a format which is simpler for console use
-    formatter = logging.Formatter('%(message)s')
+    formatter = logging.Formatter(
+        '%(asctime)s %(levelname)-8s %(message)s')
 
     # tell the handler to use this format
     console.setFormatter(formatter)

@@ -173,7 +173,14 @@ To set values, publish to `/aircon/<mac_address>/<option>/value/set`:
 /aircon/b4430dce73f1/temp/set 20
 ```
 
-Availability is published (retained) on `/aircon/LWT` (`online` / `offline`).
+Availability is published (retained) on two topics, and Home Assistant requires
+both to be `online` (`availability_mode: all` in the discovery payload):
+
+- `/aircon/LWT` — the bridge itself (`offline` is set as the MQTT last will, so
+  a dead bridge marks every AC unavailable).
+- `/aircon/<mac_address>/availability` — the individual AC. It flips to
+  `offline` after `service.availability_failures` consecutive failed polls
+  (default 3) and back to `online` on the first successful poll.
 
 ## Diagnostic tools
 
@@ -218,6 +225,12 @@ root@berry1:~/ac_db# ./monitor.py -Hd
 *********** start copy below ****************
 climate:
 - action_topic: /aircon/b4430dce73f1/homeassistant/set
+  availability:
+  - topic: /aircon/LWT
+  - topic: /aircon/b4430dce73f1/availability
+  availability_mode: all
+  pl_avail: online
+  pl_not_avail: offline
   current_temperature_topic: /aircon/b4430dce73f1/ambient_temp/value
   fan_mode_command_topic: /aircon/b4430dce73f1/fanspeed_homeassistant/set
   fan_mode_state_topic: /aircon/b4430dce73f1/fanspeed_homeassistant/value

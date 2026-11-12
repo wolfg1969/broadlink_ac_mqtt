@@ -3,6 +3,8 @@ service:
     update_interval: 10
     self_discovery: True
     bind_to_ip: False
+    # Consecutive failed polls before a device is marked offline in HA
+    availability_failures: 3
 
 mqtt:
     host: mqtt

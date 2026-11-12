@@ -103,7 +103,9 @@ There is no test suite or formal linter config. The last commit ran `autopep8` o
 ### Important implementation details
 
 - **Polling interval**: controlled by `service.update_interval` in `config.yml`. The loop waits in one shot until the earliest due device; do not revert to busy-waiting.
-- **MQTT availability**: the bridge publishes `online` (retained) to `<prefix>/LWT` on every poll cycle, not only at connect time. This prevents Home Assistant from staying `unavailable` after a transient disconnect that triggers the will `offline`.
+- **MQTT availability**: the bridge publishes `online` (retained) to `<prefix>/LWT` on every poll cycle, not only at connect time. This prevents Home Assistant from staying `unavailable` after a transient disconnect that triggers the will `offline`. The LWT covers the bridge only; per-device reachability is published separately on `<prefix><mac>/availability` (see below).
+- **Per-device availability**: `start()` polls each device inside its own `try/except` so one unreachable AC cannot abort the whole cycle. After `service.availability_failures` consecutive failed polls (default 3) it publishes retained `offline`, and `online` again on the first successful poll; state changes are published once, not every cycle. `_on_mqtt_connect()` clears the last-published state so availability is re-announced after a broker restart.
+- **Command callback guard**: `_on_mqtt_message()` wraps `_handle_mqtt_message()`. Commands to an unreachable AC raise from the UDP layer; letting that escape would kill paho's network loop thread.
 - **MQTT client reuse**: `connect_mqtt()` creates the client once. Recreating it under the same `client_id` caused the broker to evict the previous connection and produced a reconnect storm.
 - **Fan speed mapping**: the raw 3-bit fan value is mapped in `ac_db.STATIC.FAN`. This fork adds `MEDIUM_HIGH` (raw 1), `HIGH_ALT` (raw 6), and `AUTO` (raw 7); `HIGH_ALT` is normalised to `HIGH` for Home Assistant. `make_nice_status()` also overrides the fan label with `TURBO`/`MUTE` when those flags are on.
 - **Config discovery fallback**: `monitor.py` looks for `settings/config.yml` first, then `config.yml` in the script directory, and exits with a clear message if neither exists.
@@ -112,8 +114,10 @@ There is no test suite or formal linter config. The last commit ran `autopep8` o
 
 - State topics: `/aircon/<mac>/<field>/value`
 - Command topics: `/aircon/<mac>/<field>/set`
-- Availability: `/aircon/LWT`
+- Availability: `/aircon/LWT` (bridge, via MQTT will) and `/aircon/<mac>/availability` (individual AC)
 - HA auto-discovery: `<auto_discovery_topic>/climate/<mac>/config`
+
+HA discovery declares both availability topics with `availability_mode: all`, so an entity is available only when the bridge and its AC are both reachable.
 
 Command fields handled in `_on_mqtt_message()` include `temp`, `power`, `mode`, `fanspeed`, `fanspeed_homeassistant`, `mode_homeassistant`, `mode_homekit`, `fixation_v`, `fixation_h`, `display`, `mildew`, `clean`, `health`, `sleep`, and `state refresh`.
 
@@ -126,6 +130,7 @@ Compared to the archived upstream:
 - Fixed discovery/config bugs: empty device names now fall back to the MAC hex string, config paths use `os.path.join`, and missing `config.yml` produces a clear error.
 - Hardened MQTT: single reused client, paho auto-reconnect, and a per-poll LWT heartbeat so HA does not get stuck unavailable.
 - Hardened polling loop: sleep until the next due device and poll only due devices instead of every device every half second.
+- Added per-device availability: unreachable ACs are marked `offline` in HA after `service.availability_failures` failed polls, and one bad device no longer aborts the poll cycle.
 - Expanded fan-speed enum and normalised `HIGH_ALT` to `HIGH` for Home Assistant compatibility.
 - Added `get_fanspeed.py` diagnostic tool.
 - Added `Dockerfile`, `docker-compose.yml`, and `.dockerignore`; pinned to Python 3.10 because the locked dependencies only provide wheels up to that version.

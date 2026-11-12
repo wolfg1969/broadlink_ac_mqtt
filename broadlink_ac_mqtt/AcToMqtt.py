@@ -28,6 +28,10 @@ class AcToMqtt:
     def __init__(self, config):
         self.config = config
         self._mqtt = None
+        # Per-device availability: consecutive poll failures, and the last
+        # availability state published (True/False, absent means unknown).
+        self._device_failures = {}
+        self._device_available = {}
         ""
 
     def test(self, config):
@@ -120,18 +124,31 @@ class AcToMqtt:
                 if key in self.last_update and (self.last_update[key] + interval) > time.time():
                     continue
 
-                # Get the status, the global update interval is used as well to reduce requests to aircons as they slow
+                # Record the attempt up front, so a failing device waits a full
+                # interval before retrying instead of being retried non-stop by
+                # the caller's loop.
+                self.last_update[key] = time.time()
 
-                status = device.get_ac_status()
+                try:
+                    status = device.get_ac_status()
+                except Exception as e:
+                    # One unreachable AC must not abort the poll cycle for the
+                    # remaining devices, so failures are handled per device.
+                    logger.warning("Polling device %s (%s) failed: %s" % (
+                        device.name or key, key, e))
+                    status = None
 
-                # print status
+                # Availability is keyed by the MAC used in the state/discovery
+                # topics, which may differ in case from the config entry.
+                mac = device.status.get('macaddress') or key
+
                 if status:
-                    # Update last time checked
-                    self.last_update[key] = time.time()
+                    self._set_device_available(mac, True)
                     self.publish_mqtt_info(status)
 
                 else:
-                    logger.debug("No status")
+                    logger.debug("No status from device %s" % key)
+                    self._set_device_available(mac, False)
 
         except Exception as e:
             logger.critical(e)
@@ -177,7 +194,7 @@ class AcToMqtt:
                 # ,"power_command_topic" : self.config["mqtt_topic_prefix"]+  device.status["macaddress"]+"/power/set"
                 "name": str(name.decode("utf-8")), "mode_command_topic": self.config["mqtt_topic_prefix"] + device.status["macaddress"]+"/mode_homeassistant/set", "temperature_command_topic": self.config["mqtt_topic_prefix"] + device.status["macaddress"]+"/temp/set", "fan_mode_command_topic": self.config["mqtt_topic_prefix"] + device.status["macaddress"]+"/fanspeed_homeassistant/set", "swing_mode_command_topic": self.config["mqtt_topic_prefix"] + device.status["macaddress"] + "/fixation_v/set", "action_topic": self.config["mqtt_topic_prefix"] + device.status["macaddress"]+"/homeassistant/set"                # Read values
                 , "current_temperature_topic": self.config["mqtt_topic_prefix"] + device.status["macaddress"]+"/ambient_temp/value", "mode_state_topic": self.config["mqtt_topic_prefix"] + device.status["macaddress"]+"/mode_homeassistant/value", "temperature_state_topic": self.config["mqtt_topic_prefix"] + device.status["macaddress"]+"/temp/value", "fan_mode_state_topic": self.config["mqtt_topic_prefix"] + device.status["macaddress"]+"/fanspeed_homeassistant/value", "swing_mode_state_topic": self.config["mqtt_topic_prefix"] + device.status["macaddress"]+"/fixation_v/value", "fan_modes": ["Auto", "Low", "Medium", "Medium_High", "High", "Turbo", "Mute"]                # @Anonym-tsk
-                , "modes": ["off", "cool", "heat", "fan_only", "dry"], "swing_modes": ["TOP", "MIDDLE1", "MIDDLE2", "MIDDLE3", "BOTTOM", "SWING",  "AUTO"], "max_temp": 32.0, "min_temp": 16.0, "precision": 0.5, "temp_step": 0.5, "unique_id": device.status["macaddress"], "device": {"ids": device.status["macaddress"], "name": str(name.decode("utf-8")), "model": 'Aircon', "mf": "Broadlink", "sw": broadlink.version}, "pl_avail": "online", "pl_not_avail": "offline", "availability_topic": self.config["mqtt_topic_prefix"] + "LWT"
+                , "modes": ["off", "cool", "heat", "fan_only", "dry"], "swing_modes": ["TOP", "MIDDLE1", "MIDDLE2", "MIDDLE3", "BOTTOM", "SWING",  "AUTO"], "max_temp": 32.0, "min_temp": 16.0, "precision": 0.5, "temp_step": 0.5, "unique_id": device.status["macaddress"], "device": {"ids": device.status["macaddress"], "name": str(name.decode("utf-8")), "model": 'Aircon', "mf": "Broadlink", "sw": broadlink.version}, "pl_avail": "online", "pl_not_avail": "offline", "availability_mode": "all", "availability": [{"topic": self.config["mqtt_topic_prefix"] + "LWT"}, {"topic": self._device_availability_topic(device.status["macaddress"])}]
             }
 
             devices_array[device.status["macaddress"]] = device_array
@@ -278,6 +295,40 @@ class AcToMqtt:
         self._publish(self.config["mqtt_topic_prefix"] +
                       'LWT', 'online', retain=True)
 
+    def _device_availability_topic(self, mac):
+        return self.config["mqtt_topic_prefix"] + mac + "/availability"
+
+    def _publish_device_availability(self, mac, state):
+        self._publish(self._device_availability_topic(mac), state, retain=True)
+
+    def _set_device_available(self, mac, available):
+        # The LWT only covers the bridge's own MQTT connection, so a device
+        # that stops answering on its IP would otherwise stay "available" in
+        # Home Assistant forever. Publish per-device availability instead,
+        # but only on a state change to keep MQTT traffic low.
+        if available:
+            self._device_failures[mac] = 0
+            if self._device_available.get(mac) is True:
+                return
+            self._device_available[mac] = True
+            logger.info("Device %s is available" % mac)
+            self._publish_device_availability(mac, 'online')
+            return
+
+        failures = self._device_failures.get(mac, 0) + 1
+        self._device_failures[mac] = failures
+        threshold = self.config.get("availability_failures") or 3
+        if failures < threshold:
+            logger.debug("Device %s failed %d/%d poll(s)" %
+                         (mac, failures, threshold))
+            return
+        if self._device_available.get(mac) is False:
+            return
+        self._device_available[mac] = False
+        logger.warning("Device %s did not respond to %d consecutive polls, publishing offline" % (
+            mac, failures))
+        self._publish_device_availability(mac, 'offline')
+
     def connect_mqtt(self):
 
         # Only build the client once and reuse it (and its network thread).
@@ -333,6 +384,16 @@ class AcToMqtt:
         logger.debug("Mqtt Subscribed")
 
     def _on_mqtt_message(self, client, userdata, msg):
+        # A command sent to an unreachable AC raises from the UDP layer. If that
+        # escaped this callback it would kill paho's network loop thread, so
+        # contain it here and keep the bridge (and its reconnects) alive.
+        try:
+            self._handle_mqtt_message(client, userdata, msg)
+        except Exception as e:
+            logger.error("Error handling message on %s: %s" % (msg.topic, e))
+            logger.debug(traceback.format_exc())
+
+    def _handle_mqtt_message(self, client, userdata, msg):
 
         try:
             logger.debug('Mqtt Message Received! Userdata: %s, Message %s' % (
@@ -584,3 +645,7 @@ class AcToMqtt:
 
         # LWT
         self._publish_online()
+
+        # A reconnect may have followed a broker restart that dropped retained
+        # messages, so republish each device's availability on its next poll.
+        self._device_available = {}
